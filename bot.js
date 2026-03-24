@@ -13,16 +13,24 @@ const client = new Client({
 const app = express();
 app.use(express.json());
 
-/* LOAD SAVED DATA */
+/* DATABASE */
 
 let staffTimes = {};
+
+/* LOAD SAVED DATA */
 
 if (fs.existsSync("staffTimes.json")) {
   const data = fs.readFileSync("staffTimes.json");
   staffTimes = JSON.parse(data);
 }
 
-/* RANK ORDER FOR LEADERBOARD */
+/* SAVE FUNCTION */
+
+function saveData() {
+  fs.writeFileSync("staffTimes.json", JSON.stringify(staffTimes, null, 2));
+}
+
+/* RANK ORDER */
 
 const rankOrder = [
   "Empress",
@@ -36,15 +44,21 @@ const rankOrder = [
   "Plebian Tribune"
 ];
 
+/* BOT READY */
+
 client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
 
-/* ROBLOX → SEND STAFF TIME */
+/* ROBLOX → SEND TIME */
 
 app.post("/stafftime", (req, res) => {
 
   const { username, time, rank } = req.body;
+
+  if (!username || !time || !rank) {
+    return res.status(400).send("Missing data");
+  }
 
   if (!staffTimes[username]) {
     staffTimes[username] = {
@@ -56,12 +70,17 @@ app.post("/stafftime", (req, res) => {
   staffTimes[username].time += time;
   staffTimes[username].rank = rank;
 
-  /* SAVE DATA PERMANENTLY */
-  fs.writeFileSync("staffTimes.json", JSON.stringify(staffTimes, null, 2));
+  saveData();
 
   console.log(`${username} (${rank}) logged ${time}s`);
 
   res.sendStatus(200);
+});
+
+/* DEBUG ROUTE */
+
+app.get("/data", (req, res) => {
+  res.json(staffTimes);
 });
 
 /* DISCORD COMMANDS */
@@ -71,9 +90,9 @@ client.on("messageCreate", message => {
   if (message.author.bot) return;
 
   const args = message.content.split(" ");
-  const command = args[0];
+  const command = args[0].toLowerCase();
 
-  /* STAFFTIME COMMAND */
+  /* STAFFTIME */
 
   if (command === "!stafftime") {
 
@@ -120,7 +139,6 @@ client.on("messageCreate", message => {
           const minutes = Math.floor((data.time % 3600) / 60);
 
           msg += `• ${username} — ${hours}h ${minutes}m\n`;
-
         });
 
         msg += "\n";
@@ -145,7 +163,7 @@ View your staff time
 Check another staff member
 
 !staffleaderboard
-View staff leaderboard
+View staff activity leaderboard
 `);
   }
 
