@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const express = require("express");
 const fs = require("fs");
 
@@ -13,21 +13,20 @@ const client = new Client({
 const app = express();
 app.use(express.json());
 
-/* DATABASE */
+const DATA_FILE = "staffTimes.json";
 
 let staffTimes = {};
 
 /* LOAD SAVED DATA */
 
-if (fs.existsSync("staffTimes.json")) {
-  const data = fs.readFileSync("staffTimes.json");
-  staffTimes = JSON.parse(data);
+if (fs.existsSync(DATA_FILE)) {
+  staffTimes = JSON.parse(fs.readFileSync(DATA_FILE));
 }
 
-/* SAVE FUNCTION */
+/* SAVE DATA FUNCTION */
 
 function saveData() {
-  fs.writeFileSync("staffTimes.json", JSON.stringify(staffTimes, null, 2));
+  fs.writeFileSync(DATA_FILE, JSON.stringify(staffTimes, null, 2));
 }
 
 /* RANK ORDER */
@@ -50,15 +49,11 @@ client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
 
-/* ROBLOX → SEND STAFF TIME */
+/* ROBLOX API ENDPOINT */
 
 app.post("/stafftime", (req, res) => {
 
   const { username, time, rank } = req.body;
-
-  if (!username || !time || !rank) {
-    return res.status(400).send("Missing data");
-  }
 
   if (!staffTimes[username]) {
     staffTimes[username] = {
@@ -77,51 +72,44 @@ app.post("/stafftime", (req, res) => {
   res.sendStatus(200);
 });
 
-/* DEBUG DATA VIEW */
-
-app.get("/data", (req, res) => {
-  res.json(staffTimes);
-});
-
 /* DISCORD COMMANDS */
 
 client.on("messageCreate", message => {
 
   if (message.author.bot) return;
 
-  const args = message.content.split(" ");
-  const command = args[0].toLowerCase();
+  const command = message.content.split(" ")[0];
 
-  /* STAFFTIME */
+  /* STAFF TIME LOOKUP */
 
   if (command === "!stafftime") {
 
-    let username;
+    const args = message.content.split(" ").slice(1);
 
-    if (!args[1]) {
-      username = message.author.username;
-    } else {
-      username = args[1];
-    }
+    const username = args[0] || message.author.username;
 
     const data = staffTimes[username];
 
     if (!data) {
-      message.reply(`No staff activity found for **${username}**.`);
-      return;
+      return message.reply("No staff activity recorded for that user.");
     }
 
     const hours = Math.floor(data.time / 3600);
     const minutes = Math.floor((data.time % 3600) / 60);
 
-    message.reply(`🏛 **${username}'s Staff Time:** ${hours}h ${minutes}m`);
+    message.reply(`🏛 ${username}'s service record: **${hours}h ${minutes}m**`);
   }
 
-  /* STAFF LEADERBOARD */
+  /* CURSUS HONORUM LEADERBOARD */
 
   if (command === "!staffleaderboard") {
 
-    let msg = "🏛 **Roman Staff Leaderboard**\n\n";
+    const embed = new EmbedBuilder()
+      .setTitle("🏛 Cursus Honorum Records")
+      .setDescription("Official record of magistrate service within the Cursus Honorum")
+      .setColor(0xD4AF37)
+      .setFooter({ text: "Issued by the Roman Administration" })
+      .setTimestamp();
 
     rankOrder.forEach(rank => {
 
@@ -131,22 +119,26 @@ client.on("messageCreate", message => {
 
       if (members.length > 0) {
 
-        msg += `**${rank}**\n`;
+        let fieldText = "";
 
         members.forEach(([username, data]) => {
 
           const hours = Math.floor(data.time / 3600);
           const minutes = Math.floor((data.time % 3600) / 60);
 
-          msg += `• ${username} — ${hours}h ${minutes}m\n`;
+          fieldText += `• ${username} — ${hours}h ${minutes}m\n`;
         });
 
-        msg += "\n";
+        embed.addFields({
+          name: rank,
+          value: fieldText
+        });
+
       }
 
     });
 
-    message.reply(msg);
+    message.reply({ embeds: [embed] });
   }
 
   /* NEW WEEK RESET (ADMIN ONLY) */
@@ -164,27 +156,6 @@ client.on("messageCreate", message => {
     message.reply("🏛 A new week begins. The Senate ledger has been cleared.");
   }
 
-  /* HELP */
-
-  if (command === "!help") {
-
-    message.reply(`
-🏛 **Roman Staff Tracker Commands**
-
-!stafftime
-View your staff time
-
-!stafftime USERNAME
-Check another staff member
-
-!staffleaderboard
-View staff activity leaderboard
-
-!newweek
-(Admin only) Begin a new Senate week
-`);
-  }
-
 });
 
 /* START SERVER */
@@ -194,5 +165,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+/* LOGIN BOT */
 
 client.login(process.env.DISCORD_TOKEN);
