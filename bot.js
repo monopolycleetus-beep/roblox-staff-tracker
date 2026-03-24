@@ -50,7 +50,7 @@ client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
 
-/* ROBLOX → SEND TIME */
+/* ROBLOX → SEND STAFF TIME */
 
 app.post("/stafftime", (req, res) => {
 
@@ -77,7 +77,7 @@ app.post("/stafftime", (req, res) => {
   res.sendStatus(200);
 });
 
-/* DEBUG ROUTE */
+/* DEBUG DATA VIEW */
 
 app.get("/data", (req, res) => {
   res.json(staffTimes);
@@ -117,7 +117,7 @@ client.on("messageCreate", message => {
     message.reply(`🏛 **${username}'s Staff Time:** ${hours}h ${minutes}m`);
   }
 
-  /* LEADERBOARD */
+  /* STAFF LEADERBOARD */
 
   if (command === "!staffleaderboard") {
 
@@ -149,6 +149,21 @@ client.on("messageCreate", message => {
     message.reply(msg);
   }
 
+  /* NEW WEEK RESET (ADMIN ONLY) */
+
+  if (command === "!newweek") {
+
+    if (!message.member.permissions.has("Administrator")) {
+      return message.reply("❌ Only administrators may begin a new Senate week.");
+    }
+
+    staffTimes = {};
+
+    saveData();
+
+    message.reply("🏛 A new week begins. The Senate ledger has been cleared.");
+  }
+
   /* HELP */
 
   if (command === "!help") {
@@ -164,6 +179,9 @@ Check another staff member
 
 !staffleaderboard
 View staff activity leaderboard
+
+!newweek
+(Admin only) Begin a new Senate week
 `);
   }
 
