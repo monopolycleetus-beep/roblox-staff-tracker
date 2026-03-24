@@ -14,58 +14,77 @@ app.use(express.json());
 
 let staffTimes = {};
 
-// Discord ready
+// Roman rank order
+const rankOrder = [
+    "Empress",
+    "Oracle of Delphi",
+    "Consul",
+    "Curatores",
+    "Censor",
+    "Praetor Urbanus",
+    "Praetor",
+    "Curule Aedile",
+    "Plebian Tribune"
+];
+
 client.once("ready", () => {
     console.log(`Bot online as ${client.user.tag}`);
 });
 
-// API endpoint Roblox sends data to
 app.post("/stafftime", (req, res) => {
 
-    const { username, time } = req.body;
-
-    console.log("DATA RECEIVED:", username, time);
+    const { username, time, rank } = req.body;
 
     if (!staffTimes[username]) {
-        staffTimes[username] = 0;
+        staffTimes[username] = {
+            time: 0,
+            rank: rank
+        };
     }
 
-    staffTimes[username] += time;
+    staffTimes[username].time += time;
+    staffTimes[username].rank = rank;
 
-    console.log(`${username} shift logged: ${time} seconds`);
+    console.log(`${username} (${rank}) logged ${time}s`);
 
     res.sendStatus(200);
 });
 
-// Discord command
 client.on("messageCreate", message => {
 
     if (message.author.bot) return;
 
-    if (message.content.startsWith("!stafftime")) {
+    if (message.content === "!staffleaderboard") {
 
-        const args = message.content.split(" ");
-        const user = args[1];
+        const sorted = Object.entries(staffTimes).sort((a, b) => {
 
-        if (!staffTimes[user]) {
-            return message.reply("No staff time recorded.");
-        }
+            const rankA = rankOrder.indexOf(a[1].rank);
+            const rankB = rankOrder.indexOf(b[1].rank);
 
-        let seconds = staffTimes[user];
-        let hours = Math.floor(seconds / 3600);
-        let minutes = Math.floor((seconds % 3600) / 60);
+            if (rankA !== rankB) return rankA - rankB;
 
-        message.reply(`${user} has ${hours}h ${minutes}m of staff activity.`);
+            return b[1].time - a[1].time;
+        });
+
+        let msg = "🏛 Roman Staff Leaderboard\n\n";
+
+        sorted.forEach(([username, data]) => {
+
+            const hours = Math.floor(data.time / 3600);
+            const minutes = Math.floor((data.time % 3600) / 60);
+
+            msg += `${data.rank} — ${username} (${hours}h ${minutes}m)\n`;
+        });
+
+        message.reply(msg);
     }
 
 });
 
-// Railway port fix
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-// login using environment variable
 client.login(process.env.DISCORD_TOKEN);
