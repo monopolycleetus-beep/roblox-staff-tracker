@@ -1,5 +1,6 @@
 const { Client, GatewayIntentBits } = require("discord.js");
 const express = require("express");
+const fs = require("fs");
 
 const client = new Client({
   intents: [
@@ -12,7 +13,16 @@ const client = new Client({
 const app = express();
 app.use(express.json());
 
+/* LOAD SAVED DATA */
+
 let staffTimes = {};
+
+if (fs.existsSync("staffTimes.json")) {
+  const data = fs.readFileSync("staffTimes.json");
+  staffTimes = JSON.parse(data);
+}
+
+/* RANK ORDER FOR LEADERBOARD */
 
 const rankOrder = [
   "Empress",
@@ -30,6 +40,8 @@ client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
 
+/* ROBLOX → SEND STAFF TIME */
+
 app.post("/stafftime", (req, res) => {
 
   const { username, time, rank } = req.body;
@@ -44,33 +56,51 @@ app.post("/stafftime", (req, res) => {
   staffTimes[username].time += time;
   staffTimes[username].rank = rank;
 
+  /* SAVE DATA PERMANENTLY */
+  fs.writeFileSync("staffTimes.json", JSON.stringify(staffTimes, null, 2));
+
   console.log(`${username} (${rank}) logged ${time}s`);
 
   res.sendStatus(200);
 });
 
+/* DISCORD COMMANDS */
+
 client.on("messageCreate", message => {
 
   if (message.author.bot) return;
 
-  // PERSONAL STAFF TIME
-  if (message.content === "!stafftime") {
+  const args = message.content.split(" ");
+  const command = args[0];
 
-    const data = staffTimes[message.author.username];
+  /* STAFFTIME COMMAND */
+
+  if (command === "!stafftime") {
+
+    let username;
+
+    if (!args[1]) {
+      username = message.author.username;
+    } else {
+      username = args[1];
+    }
+
+    const data = staffTimes[username];
 
     if (!data) {
-      message.reply("No staff activity recorded yet.");
+      message.reply(`No staff activity found for **${username}**.`);
       return;
     }
 
     const hours = Math.floor(data.time / 3600);
     const minutes = Math.floor((data.time % 3600) / 60);
 
-    message.reply(`🏛 Your staff time: **${hours}h ${minutes}m**`);
+    message.reply(`🏛 **${username}'s Staff Time:** ${hours}h ${minutes}m`);
   }
 
-  // RANK CATEGORY LEADERBOARD
-  if (message.content === "!staffleaderboard") {
+  /* LEADERBOARD */
+
+  if (command === "!staffleaderboard") {
 
     let msg = "🏛 **Roman Staff Leaderboard**\n\n";
 
@@ -101,7 +131,27 @@ client.on("messageCreate", message => {
     message.reply(msg);
   }
 
+  /* HELP */
+
+  if (command === "!help") {
+
+    message.reply(`
+🏛 **Roman Staff Tracker Commands**
+
+!stafftime
+View your staff time
+
+!stafftime USERNAME
+Check another staff member
+
+!staffleaderboard
+View staff leaderboard
+`);
+  }
+
 });
+
+/* START SERVER */
 
 const PORT = process.env.PORT || 3000;
 
