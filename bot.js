@@ -14,15 +14,25 @@ const app = express();
 app.use(express.json());
 
 const DATA_FILE = "./staffTimes.json";
+const BOARD_FILE = "./leaderboard.json";
 
 let staffTimes = {};
+let leaderboardData = { channelId: null, messageId: null };
 
 if (fs.existsSync(DATA_FILE)) {
   staffTimes = JSON.parse(fs.readFileSync(DATA_FILE));
 }
 
+if (fs.existsSync(BOARD_FILE)) {
+  leaderboardData = JSON.parse(fs.readFileSync(BOARD_FILE));
+}
+
 function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(staffTimes, null, 2));
+}
+
+function saveBoard() {
+  fs.writeFileSync(BOARD_FILE, JSON.stringify(leaderboardData, null, 2));
 }
 
 const rankOrder = [
@@ -41,15 +51,76 @@ client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
 
+/* BUILD LEADERBOARD EMBED */
+
+function buildLeaderboardEmbed() {
+
+  const embed = new EmbedBuilder()
+    .setTitle("🏛 Cursus Honorum Records")
+    .setDescription("Weekly service records of Rome's magistrates.")
+    .setColor(0xD4AF37)
+    .setFooter({ text: "Issued by the Office of the Censor" })
+    .setTimestamp();
+
+  rankOrder.forEach(rank => {
+
+    const members = Object.entries(staffTimes)
+      .filter(([_, data]) => data.rank === rank)
+      .sort((a, b) => b[1].time - a[1].time);
+
+    if (members.length > 0) {
+
+      let text = "";
+
+      members.forEach(([username, data]) => {
+
+        const hours = Math.floor(data.time / 3600);
+        const minutes = Math.floor((data.time % 3600) / 60);
+
+        text += `• ${username} — ${hours}h ${minutes}m\n`;
+
+      });
+
+      embed.addFields({
+        name: rank,
+        value: text
+      });
+
+    }
+
+  });
+
+  return embed;
+}
+
+/* UPDATE LIVE LEADERBOARD */
+
+async function updateLeaderboard() {
+
+  if (!leaderboardData.channelId || !leaderboardData.messageId) return;
+
+  try {
+
+    const channel = await client.channels.fetch(leaderboardData.channelId);
+    const message = await channel.messages.fetch(leaderboardData.messageId);
+
+    const embed = buildLeaderboardEmbed();
+
+    await message.edit({ embeds: [embed] });
+
+  } catch (err) {
+    console.log("Leaderboard update failed:", err);
+  }
+}
+
+/* ROBLOX ACTIVITY API */
+
 app.post("/stafftime", (req, res) => {
 
   const { username, time, rank } = req.body;
 
   if (!staffTimes[username]) {
-    staffTimes[username] = {
-      time: 0,
-      rank: rank
-    };
+    staffTimes[username] = { time: 0, rank: rank };
   }
 
   staffTimes[username].time += time;
@@ -59,15 +130,50 @@ app.post("/stafftime", (req, res) => {
 
   console.log(`${username} (${rank}) logged ${time}s`);
 
+  updateLeaderboard();
+
   res.sendStatus(200);
 });
 
-client.on("messageCreate", message => {
+/* DISCORD COMMANDS */
+
+client.on("messageCreate", async message => {
 
   if (message.author.bot) return;
 
   const args = message.content.split(" ");
   const command = args[0].toLowerCase();
+
+  /* HELP */
+
+  if (command === "!help") {
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏛 Command Register")
+      .setDescription("Official commands of the Roman administration.")
+      .setColor(0xD4AF37)
+
+      .addFields(
+        {
+          name: "📊 Staff Activity",
+          value:
+          "`!stafftime` — View your service hours\n" +
+          "`!stafftime username` — View another magistrate's hours\n" +
+          "`!staffleaderboard` — View the Cursus Honorum records"
+        },
+        {
+          name: "🏛 Administration",
+          value:
+          "`!newweek` — Begin a new week of records (Admin)\n" +
+          "`!createstaffboard` — Create the live leaderboard"
+        }
+      )
+
+      .setFooter({ text: "Issued by the Office of the Censor" })
+      .setTimestamp();
+
+    message.reply({ embeds: [embed] });
+  }
 
   /* STAFFTIME */
 
@@ -91,8 +197,7 @@ client.on("messageCreate", message => {
       .setColor(0xD4AF37)
       .addFields({
         name: "Recorded Service",
-        value: `${hours}h ${minutes}m`,
-        inline: true
+        value: `${hours}h ${minutes}m`
       })
       .setFooter({ text: "Issued by the Office of the Censor" })
       .setTimestamp();
@@ -100,46 +205,34 @@ client.on("messageCreate", message => {
     message.reply({ embeds: [embed] });
   }
 
-  /* LEADERBOARD */
+  /* LEADERBOARD COMMAND */
 
   if (command === "!staffleaderboard") {
 
-    const embed = new EmbedBuilder()
-      .setTitle("🏛 Cursus Honorum Records")
-      .setDescription("Weekly service records of Rome's magistrates.")
-      .setColor(0xD4AF37)
-      .setFooter({ text: "Issued by the Office of the Censor" })
-      .setTimestamp();
-
-    rankOrder.forEach(rank => {
-
-      const members = Object.entries(staffTimes)
-        .filter(([_, data]) => data.rank === rank)
-        .sort((a, b) => b[1].time - a[1].time);
-
-      if (members.length > 0) {
-
-        let text = "";
-
-        members.forEach(([username, data]) => {
-
-          const hours = Math.floor(data.time / 3600);
-          const minutes = Math.floor((data.time % 3600) / 60);
-
-          text += `• ${username} — ${hours}h ${minutes}m\n`;
-
-        });
-
-        embed.addFields({
-          name: rank,
-          value: text
-        });
-
-      }
-
-    });
-
+    const embed = buildLeaderboardEmbed();
     message.reply({ embeds: [embed] });
+
+  }
+
+  /* CREATE LIVE BOARD */
+
+  if (command === "!createstaffboard") {
+
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      message.reply("Only administrators may create the staff board.");
+      return;
+    }
+
+    const embed = buildLeaderboardEmbed();
+
+    const msg = await message.channel.send({ embeds: [embed] });
+
+    leaderboardData.channelId = msg.channel.id;
+    leaderboardData.messageId = msg.id;
+
+    saveBoard();
+
+    message.reply("🏛 Live staff leaderboard created.");
   }
 
   /* NEW WEEK RESET */
@@ -147,7 +240,7 @@ client.on("messageCreate", message => {
   if (command === "!newweek") {
 
     if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-      message.reply("Only administrators may begin a new week of records.");
+      message.reply("Only administrators may begin a new week.");
       return;
     }
 
@@ -162,41 +255,8 @@ client.on("messageCreate", message => {
       .setTimestamp();
 
     message.channel.send({ embeds: [embed] });
-  }
 
-  /* HELP COMMAND */
-
-  if (command === "!help") {
-
-    const embed = new EmbedBuilder()
-      .setTitle("🏛 Command Register")
-      .setDescription("Official commands of the Roman administration.")
-      .setColor(0xD4AF37)
-
-      .addFields(
-        {
-          name: "📊 Staff Activity",
-          value:
-          "`!stafftime` — View your service hours\n" +
-          "`!stafftime username` — View another magistrate's hours\n" +
-          "`!staffleaderboard` — View the Cursus Honorum records"
-        },
-        {
-          name: "🏛 Administration",
-          value:
-          "`!newweek` — Begin a new week of records (Admin only)"
-        },
-        {
-          name: "ℹ️ Information",
-          value:
-          "`!help` — Display the command register"
-        }
-      )
-
-      .setFooter({ text: "Issued by the Office of the Censor" })
-      .setTimestamp();
-
-    message.reply({ embeds: [embed] });
+    updateLeaderboard();
   }
 
 });
