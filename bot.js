@@ -108,7 +108,7 @@ client.on("messageCreate", message => {
       .setTitle("🏛 Cursus Honorum Records")
       .setDescription("Official record of magistrate service within the Cursus Honorum")
       .setColor(0xD4AF37)
-      .setFooter({ text: "Issued by the Roman Administration" })
+      .setFooter({ text: "Issued by the Office of the Censor" })
       .setTimestamp();
 
     rankOrder.forEach(rank => {
