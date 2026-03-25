@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField } = require("discord.js");
 const express = require("express");
 const fs = require("fs");
 
@@ -13,23 +13,17 @@ const client = new Client({
 const app = express();
 app.use(express.json());
 
-const DATA_FILE = "staffTimes.json";
+const DATA_FILE = "./staffTimes.json";
 
 let staffTimes = {};
-
-/* LOAD SAVED DATA */
 
 if (fs.existsSync(DATA_FILE)) {
   staffTimes = JSON.parse(fs.readFileSync(DATA_FILE));
 }
 
-/* SAVE DATA FUNCTION */
-
 function saveData() {
   fs.writeFileSync(DATA_FILE, JSON.stringify(staffTimes, null, 2));
 }
-
-/* RANK ORDER */
 
 const rankOrder = [
   "Empress",
@@ -43,13 +37,9 @@ const rankOrder = [
   "Plebian Tribune"
 ];
 
-/* BOT READY */
-
 client.once("ready", () => {
   console.log(`Bot online as ${client.user.tag}`);
 });
-
-/* ROBLOX API ENDPOINT */
 
 app.post("/stafftime", (req, res) => {
 
@@ -72,41 +62,51 @@ app.post("/stafftime", (req, res) => {
   res.sendStatus(200);
 });
 
-/* DISCORD COMMANDS */
-
 client.on("messageCreate", message => {
 
   if (message.author.bot) return;
 
-  const command = message.content.split(" ")[0];
+  const args = message.content.split(" ");
+  const command = args[0].toLowerCase();
 
-  /* STAFF TIME LOOKUP */
+  /* STAFFTIME */
 
   if (command === "!stafftime") {
 
-    const args = message.content.split(" ").slice(1);
+    let target = args[1] || message.author.username;
 
-    const username = args[0] || message.author.username;
-
-    const data = staffTimes[username];
+    const data = staffTimes[target];
 
     if (!data) {
-      return message.reply("No staff activity recorded for that user.");
+      message.reply("No staff activity recorded for that user.");
+      return;
     }
 
     const hours = Math.floor(data.time / 3600);
     const minutes = Math.floor((data.time % 3600) / 60);
 
-    message.reply(`🏛 ${username}'s service record: **${hours}h ${minutes}m**`);
+    const embed = new EmbedBuilder()
+      .setTitle("🏛 Staff Service Record")
+      .setDescription(`Service record for **${target}**`)
+      .setColor(0xD4AF37)
+      .addFields({
+        name: "Recorded Service",
+        value: `${hours}h ${minutes}m`,
+        inline: true
+      })
+      .setFooter({ text: "Issued by the Office of the Censor" })
+      .setTimestamp();
+
+    message.reply({ embeds: [embed] });
   }
 
-  /* CURSUS HONORUM LEADERBOARD */
+  /* LEADERBOARD */
 
   if (command === "!staffleaderboard") {
 
     const embed = new EmbedBuilder()
       .setTitle("🏛 Cursus Honorum Records")
-      .setDescription("Official record of magistrate service within the Cursus Honorum")
+      .setDescription("Weekly service records of Rome's magistrates.")
       .setColor(0xD4AF37)
       .setFooter({ text: "Issued by the Office of the Censor" })
       .setTimestamp();
@@ -119,19 +119,20 @@ client.on("messageCreate", message => {
 
       if (members.length > 0) {
 
-        let fieldText = "";
+        let text = "";
 
         members.forEach(([username, data]) => {
 
           const hours = Math.floor(data.time / 3600);
           const minutes = Math.floor((data.time % 3600) / 60);
 
-          fieldText += `• ${username} — ${hours}h ${minutes}m\n`;
+          text += `• ${username} — ${hours}h ${minutes}m\n`;
+
         });
 
         embed.addFields({
           name: rank,
-          value: fieldText
+          value: text
         });
 
       }
@@ -141,31 +142,69 @@ client.on("messageCreate", message => {
     message.reply({ embeds: [embed] });
   }
 
-  /* NEW WEEK RESET (ADMIN ONLY) */
+  /* NEW WEEK RESET */
 
   if (command === "!newweek") {
 
-    if (!message.member.permissions.has("Administrator")) {
-      return message.reply("❌ Only administrators may begin a new Senate week.");
+    if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+      message.reply("Only administrators may begin a new week of records.");
+      return;
     }
 
     staffTimes = {};
-
     saveData();
 
-    message.reply("🏛 A new week begins. The Senate ledger has been cleared.");
+    const embed = new EmbedBuilder()
+      .setTitle("🏛 A New Week Begins")
+      .setDescription("The **Cursus Honorum Records** have been cleared.\n\nA new week of service to Rome begins.")
+      .setColor(0xD4AF37)
+      .setFooter({ text: "Issued by the Office of the Censor" })
+      .setTimestamp();
+
+    message.channel.send({ embeds: [embed] });
+  }
+
+  /* HELP COMMAND */
+
+  if (command === "!help") {
+
+    const embed = new EmbedBuilder()
+      .setTitle("🏛 Command Register")
+      .setDescription("Official commands of the Roman administration.")
+      .setColor(0xD4AF37)
+
+      .addFields(
+        {
+          name: "📊 Staff Activity",
+          value:
+          "`!stafftime` — View your service hours\n" +
+          "`!stafftime username` — View another magistrate's hours\n" +
+          "`!staffleaderboard` — View the Cursus Honorum records"
+        },
+        {
+          name: "🏛 Administration",
+          value:
+          "`!newweek` — Begin a new week of records (Admin only)"
+        },
+        {
+          name: "ℹ️ Information",
+          value:
+          "`!help` — Display the command register"
+        }
+      )
+
+      .setFooter({ text: "Issued by the Office of the Censor" })
+      .setTimestamp();
+
+    message.reply({ embeds: [embed] });
   }
 
 });
-
-/* START SERVER */
 
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-/* LOGIN BOT */
 
 client.login(process.env.DISCORD_TOKEN);
